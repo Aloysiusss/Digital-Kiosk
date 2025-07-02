@@ -1,0 +1,61 @@
+﻿using System.Data;
+using System.Data.SqlClient;
+
+namespace billGUI
+{
+    public static class DatabaseHelper
+    {
+        private static string connectionString = "Server=172.20.4.48;Database=CampusSolution;User Id=sa;Password=WvRF!77kyExE&oq!PatJ;";
+
+        public static DataRow GetStudentById(string studentId)
+        {
+            using (SqlConnection conn = new SqlConnection(connectionString))
+            {
+                string query = "SELECT * FROM billaccepts WHERE student_id = @student_id";
+                SqlCommand cmd = new SqlCommand(query, conn);
+                cmd.Parameters.AddWithValue("@student_id", studentId);
+
+                SqlDataAdapter adapter = new SqlDataAdapter(cmd);
+                DataTable table = new DataTable();
+                adapter.Fill(table);
+
+                return table.Rows.Count > 0 ? table.Rows[0] : null;
+            }
+        }
+        public static void UpdateBalance(string studentId, decimal amountToAdd)
+        {
+            using (SqlConnection conn = new SqlConnection(connectionString))
+            {
+                conn.Open();
+                string query = "UPDATE billaccepts SET balance = balance + @amount, updated_at = GETDATE() WHERE student_id = @student_id";
+                SqlCommand cmd = new SqlCommand(query, conn);
+                cmd.Parameters.AddWithValue("@amount", amountToAdd);
+                cmd.Parameters.AddWithValue("@student_id", studentId);
+                cmd.ExecuteNonQuery();
+            }
+        }
+
+        public static void InsertDenomination(string studentId, string denominationType, int denominationValue, string transactionCode)
+        {
+            using (SqlConnection conn = new SqlConnection(connectionString))
+            {
+                conn.Open();
+                string query = @"
+                    INSERT INTO Bills_Denomination (StudentID, DenominationType, DenominationValue, TransactionCode, InsertedAt)
+                    VALUES (@StudentID, @DenominationType, @DenominationValue, @TransactionCode, GETDATE())";
+
+                using (SqlCommand cmd = new SqlCommand(query, conn))
+                {
+                    cmd.Parameters.AddWithValue("@StudentID", studentId);
+                    cmd.Parameters.AddWithValue("@DenominationType", denominationType);
+                    cmd.Parameters.AddWithValue("@DenominationValue", denominationValue);
+                    cmd.Parameters.AddWithValue("@TransactionCode", transactionCode);
+
+                    cmd.ExecuteNonQuery();
+                }
+            }
+        }
+
+
+    }
+}
