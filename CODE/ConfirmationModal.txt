@@ -1,0 +1,121 @@
+using System;
+using System.Drawing;
+using System.Windows.Forms;
+
+namespace billGUI
+{
+    public class ConfirmationModal : Form
+    {
+        private Label lblTitle;
+        private Label lblMessage;
+        private Button btnConfirm;
+        private Button btnCancel;
+        private TableLayoutPanel layout;
+        private FlowLayoutPanel buttonPanel;
+
+        public ConfirmationModal(string message)
+        {
+            InitializeComponent(message);
+        }
+
+        private void InitializeComponent(string message)
+        {
+            // Form properties
+            this.Text = "Confirm Student Info";
+            this.FormBorderStyle = FormBorderStyle.FixedDialog;
+            this.StartPosition = FormStartPosition.CenterParent;
+            this.Size = new Size(750, 350);
+            this.BackColor = Color.FromArgb(30, 30, 30);
+            this.MinimizeBox = false;
+            this.MaximizeBox = false;
+            this.ControlBox = false;
+            this.ShowInTaskbar = false;
+
+            // Layout
+            layout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 1,
+                RowCount = 3,
+                BackColor = Color.FromArgb(30, 30, 30),
+                Padding = new Padding(30),
+            };
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 60F));
+            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 80F));
+            this.Controls.Add(layout);
+
+            // Title
+            lblTitle = new Label
+            {
+                Text = "Student Information",
+                Dock = DockStyle.Fill,
+                Font = new Font("Segoe UI", 22F, FontStyle.Bold),
+                ForeColor = Color.Goldenrod,
+                TextAlign = ContentAlignment.MiddleCenter,
+                AutoSize = false
+            };
+            layout.Controls.Add(lblTitle, 0, 0);
+
+            // Message
+            lblMessage = new Label
+            {
+                Text = message,
+                Dock = DockStyle.Fill,
+                Font = new Font("Segoe UI", 16F, FontStyle.Regular),
+                ForeColor = Color.WhiteSmoke,
+                TextAlign = ContentAlignment.TopLeft,
+                Padding = new Padding(20, 10, 20, 10),
+                AutoSize = false
+            };
+            layout.Controls.Add(lblMessage, 0, 1);
+
+            // Button Panel
+            buttonPanel = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = false,
+                AutoSize = true,
+                Anchor = AnchorStyles.None,
+                Padding = new Padding(0),
+                Margin = new Padding(0),
+                BackColor = Color.FromArgb(30, 30, 30),
+            };
+            layout.Controls.Add(buttonPanel, 0, 2);
+
+            // Confirm Button
+            btnConfirm = new Button
+            {
+                Text = "Confirm",
+                DialogResult = DialogResult.OK,
+                Font = new Font("Segoe UI", 14F, FontStyle.Bold),
+                Size = new Size(160, 50),
+                BackColor = Color.ForestGreen,
+                ForeColor = Color.White,
+                FlatStyle = FlatStyle.Flat
+            };
+            btnConfirm.FlatAppearance.BorderSize = 0;
+            buttonPanel.Controls.Add(btnConfirm);
+
+            // Cancel Button
+            btnCancel = new Button
+            {
+                Text = "Cancel",
+                DialogResult = DialogResult.Cancel,
+                Font = new Font("Segoe UI", 14F, FontStyle.Bold),
+                Size = new Size(160, 50),
+                BackColor = Color.Firebrick,
+                ForeColor = Color.White,
+                FlatStyle = FlatStyle.Flat
+            };
+            btnCancel.FlatAppearance.BorderSize = 0;
+            buttonPanel.Controls.Add(btnCancel);
+
+            // Default button actions
+            this.AcceptButton = btnConfirm;
+            this.CancelButton = btnCancel;
+        }
+    }
+}

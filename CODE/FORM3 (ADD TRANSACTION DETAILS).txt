@@ -1,0 +1,475 @@
+    using System;
+    using System.Collections.Generic;
+    using System.ComponentModel;
+    using System.Data;
+    using System.Drawing;
+    using System.Drawing.Drawing2D;
+    using System.Linq;
+    using System.Text;
+    using System.Threading.Tasks;
+    using System.Windows.Forms;
+
+    namespace billGUI
+    {
+        public partial class Form3 : Form
+        {
+            private string studentId;
+            private Label lblTotal;
+            private DataGridView dgv;
+            private PictureBox btnBack, btnNext;
+            private Label footerLeft;
+            private Label footerRight;
+            private Timer clockTimer;
+            private Label lblTitle;
+            private Button btnAdd;
+            public class TransactionItem
+            {
+                public string TransactionType { get; set; }
+                public int Quantity { get; set; }
+                public decimal Amount { get; set; }
+            }
+        public string StudentId => studentId;
+
+        public Form3(string studentId)
+            {
+                InitializeComponent();
+                this.studentId = studentId;
+                this.DoubleBuffered = true;
+                this.WindowState = FormWindowState.Maximized;
+                this.FormBorderStyle = FormBorderStyle.FixedSingle;
+
+                this.Load += Form3_Load;
+                this.Resize += (s, e) =>
+                {
+                    UpdateClockPosition();
+                    UpdateTableLayout();
+                    PositionTitleLabel();
+                };
+
+        }
+        private void ClockTimer_Tick(object sender, EventArgs e)
+            {
+                footerRight.Text = DateTime.Now.ToString("MM/dd/yyyy hh:mm:ss tt");
+                footerRight.AutoSize = true;
+                footerRight.Refresh();
+                int newX = this.ClientSize.Width - footerRight.Width - 10;
+                if (newX < 0) newX = 0;
+                footerRight.Location = new Point(newX, this.ClientSize.Height - 40);
+                footerRight.BringToFront();
+            }
+            private void UpdateClockPosition()
+            {
+                if (footerRight != null)
+                {
+                    int newX = this.ClientSize.Width - footerRight.Width - 10;
+                    if (newX < 0) newX = 0;
+                    footerRight.Location = new Point(newX, this.ClientSize.Height - 40);
+                    footerRight.BringToFront();
+                }
+            }
+        private void UpdateTableLayout()
+        {
+            if (dgv == null)
+                return;
+
+            int horizontalMargin = 150;
+            int topOffset = 150;
+
+            int availableWidth = this.ClientSize.Width - 2 * horizontalMargin;
+            int availableHeight = (int)(this.ClientSize.Height * 0.65);
+
+            dgv.Width = availableWidth;
+            dgv.Height = availableHeight;
+            dgv.Location = new Point(horizontalMargin, topOffset);
+
+            if (lblTotal != null)
+            {
+                lblTotal.Location = new Point(dgv.Right - lblTotal.Width, dgv.Bottom + 20);
+            }
+
+            if (btnAdd != null)
+            {
+                btnAdd.Location = new Point(dgv.Left, lblTotal.Top);
+            }
+        }
+
+        private void PositionTitleLabel()
+            {
+                if (btnBack == null || btnNext == null || lblTitle == null)
+                    return;
+
+                int spaceStart = btnBack.Right + 10;
+                int spaceEnd = btnNext.Left - 10;
+
+                int centerX = spaceStart + (spaceEnd - spaceStart) / 2;
+                lblTitle.Location = new Point(centerX - lblTitle.Width / 2, btnBack.Top + (btnBack.Height - lblTitle.Height) / 2);
+            }
+            private void Form3_Load(object sender, EventArgs e)
+            {
+                this.Controls.Clear();
+                this.BackColor = Color.White;
+
+                // Back Image Button
+                btnBack = new PictureBox
+                {
+                    Image = Properties.Resources.left_arrow, 
+                    SizeMode = PictureBoxSizeMode.StretchImage,
+                    Size = new Size(100, 100),
+                    Location = new Point(30, 20),
+                    Cursor = Cursors.Hand
+                };
+                //btnBack.Click += (s, ev) => { this.Close(); };
+
+                btnBack.Click += async (s, ev) =>
+                {
+                    Form2 form2 = Application.OpenForms["Form2"] as Form2;
+
+                    if (form2 != null)
+                    {
+                        form2.Opacity = 0;
+                        form2.Show();
+                        await Task.Delay(200);
+                        form2.Opacity = 1;
+                    }
+
+                    this.Close();
+                };
+
+                this.Controls.Add(btnBack);
+
+                Label lblBack = new Label
+                {
+                    Text = "Back",
+                    Font = new Font("Segoe UI", 16, FontStyle.Bold),
+                    ForeColor = Color.Black,
+                    AutoSize = true,
+                    Location = new Point(btnBack.Right + 10, btnBack.Top + (btnBack.Height - 30) / 2)
+                };
+                this.Controls.Add(lblBack);
+
+                // Next Image Button
+                btnNext = new PictureBox
+                {
+                    Image = Properties.Resources.right_arrow_2_, 
+                    SizeMode = PictureBoxSizeMode.StretchImage,
+                    Size = new Size(100, 100),
+                    Location = new Point(this.ClientSize.Width - 130, 20),
+                    //Location = new Point(1825, 20),
+                    Anchor = AnchorStyles.Top | AnchorStyles.Right,
+                    Cursor = Cursors.Hand
+                };
+                btnNext.Click += BtnNext_Click;
+                this.Controls.Add(btnNext);
+
+                Label lblNext = new Label
+                {
+                    Text = "Next",
+                    Font = new Font("Segoe UI", 16, FontStyle.Bold),
+                    ForeColor = Color.Black,
+                    AutoSize = true,
+                    //Location = new Point(btnNext.Left - 10 - 50, btnNext.Top + (btnNext.Height - 30) / 2) // 50 is estimated label width
+                };
+                this.Controls.Add(lblNext);
+
+                lblNext.Location = new Point(
+                    btnNext.Left - 10 - lblNext.Width,
+                    btnNext.Top + (btnNext.Height - lblNext.Height) / 2
+                );
+
+                lblTitle = new Label
+                {
+                    Text = "Enter Transactions",
+                    Font = new Font("Segoe UI", 35, FontStyle.Bold),
+                    ForeColor = Color.Red,
+                    AutoSize = true,
+                    TextAlign = ContentAlignment.MiddleCenter,
+                };
+                this.Controls.Add(lblTitle);
+
+                PositionTitleLabel();
+
+            // DataGridView
+            dgv = new DataGridView
+                {
+                    BackgroundColor = Color.White,
+                    AllowUserToAddRows = false,
+                    AllowUserToResizeRows = false,
+                    AllowUserToResizeColumns = false,
+                    ReadOnly = true,
+                    RowHeadersVisible = false,
+                    ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing,
+                    ColumnHeadersHeight = 40,
+                    AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
+                    //AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None,
+                    BorderStyle = BorderStyle.FixedSingle,
+                    //EnableHeadersVisualStyles = false,
+                    CellBorderStyle = DataGridViewCellBorderStyle.Single,
+                    GridColor = Color.Black,
+                    SelectionMode = DataGridViewSelectionMode.FullRowSelect,
+                    Font = new Font("Segoe UI", 12),
+                    Height = 450, 
+                };
+
+                // Header styling
+                dgv.ColumnHeadersDefaultCellStyle.Font = new Font("Segoe UI", 12, FontStyle.Bold);
+                dgv.ColumnHeadersDefaultCellStyle.BackColor = Color.White;
+                dgv.ColumnHeadersDefaultCellStyle.ForeColor = Color.Black;
+                dgv.ColumnHeadersDefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter;
+
+                // Cell styling
+                dgv.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter;
+                dgv.DefaultCellStyle.SelectionBackColor = Color.White;
+                dgv.DefaultCellStyle.SelectionForeColor = Color.Black;
+
+                // Add columns
+                dgv.Columns.Add("TransactionType", "Transaction Type");
+                dgv.Columns.Add("Amount", "Amount");
+                dgv.Columns.Add("Quantity", "Quantity");
+                dgv.Columns.Add("FinalAmount", "Final Amount");
+
+                // Format amount columns
+                dgv.Columns["Amount"].DefaultCellStyle.Format = "N2";
+                dgv.Columns["FinalAmount"].DefaultCellStyle.Format = "N2";
+
+                // Set individual column widths
+                dgv.Columns["TransactionType"].HeaderCell.Style.Alignment = DataGridViewContentAlignment.MiddleLeft;
+                dgv.Columns["TransactionType"].DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleLeft;
+                //dgv.Columns["TransactionType"].Width = 706;
+                //dgv.Columns["Amount"].Width = 270;
+                //dgv.Columns["Quantity"].Width = 270;
+                //dgv.Columns["FinalAmount"].Width = 270;
+
+                dgv.Columns["TransactionType"].MinimumWidth = 850;
+                dgv.Columns["Amount"].MinimumWidth = 200;
+                dgv.Columns["Quantity"].MinimumWidth = 200;
+                dgv.Columns["FinalAmount"].MinimumWidth = 200;
+
+                //dgv.Columns["TransactionType"].FillWeight = 500;
+                //dgv.Columns["Amount"].FillWeight = 20;
+                //dgv.Columns["Quantity"].FillWeight = 20;
+                //dgv.Columns["FinalAmount"].FillWeight = 20;
+
+                // Button column for "Remove"
+                DataGridViewButtonColumn actionCol = new DataGridViewButtonColumn
+                {
+                    Name = "Action",
+                    HeaderText = "Action",
+                    Text = "Remove",
+                    UseColumnTextForButtonValue = true,
+                    FlatStyle = FlatStyle.Standard,
+                    DefaultCellStyle = new DataGridViewCellStyle
+                    {
+                        ForeColor = Color.Red,
+                        SelectionForeColor = Color.Red,
+                        Alignment = DataGridViewContentAlignment.MiddleCenter
+                    }
+                };
+                dgv.Columns.Add(actionCol);
+
+                //dgv.Columns["Action"].Width = 20;
+
+                // Row height
+                dgv.RowTemplate.Height = 75;
+                this.Controls.Add(dgv);
+                dgv.CellClick += Dgv_CellClick;
+                UpdateTableLayout();
+
+                // Total Label
+                lblTotal = new Label
+                {
+                    Text = "Total: 0.00",
+                    Font = new Font("Arial", 18, FontStyle.Bold),
+                    ForeColor = Color.Black,
+                    BackColor = Color.Transparent,
+                    AutoSize = true,
+                    Location = new Point(1570, dgv.Bottom + 10)
+                };
+                this.Controls.Add(lblTotal);
+                lblTotal.Visible = false;
+
+
+                btnAdd = new Button
+                {
+                    Text = "Add +",
+                    Font = new Font("Arial", 14, FontStyle.Bold),
+                    Size = new Size(100, lblTotal.Height + 10),  
+                    Location = new Point(dgv.Left, lblTotal.Top), 
+                    BackColor = Color.LightGreen,
+                    Cursor = Cursors.Hand,
+                    FlatStyle = FlatStyle.Flat
+                };
+
+                btnAdd.FlatAppearance.BorderSize = 1;
+
+                btnAdd.Click += (s, ev) =>
+                {
+                    using (Form4 addForm = new Form4())
+                    {
+                        if (addForm.ShowDialog() == DialogResult.OK)
+                        {
+                            decimal final = addForm.Amount * addForm.Quantity;
+                            dgv.Rows.Add(addForm.TransactionType,
+                                         addForm.Amount.ToString("N2"),
+                                         addForm.Quantity,
+                                         final.ToString("N2")
+                            );
+                            UpdateTotal();
+                        }
+                    }
+                };
+
+                this.Controls.Add(btnAdd);
+
+                // Footer
+                footerLeft = new Label
+                {
+                    Text = "Powered by: AMA - SDI (2025)",
+                    Font = new Font("Segoe UI", 13, FontStyle.Bold),
+                    ForeColor = Color.Black,
+                    BackColor = Color.Transparent,
+                    BorderStyle = BorderStyle.None,
+                    AutoSize = true,
+                    Location = new Point(10, this.ClientSize.Height - 40)
+                };
+                this.Controls.Add(footerLeft);
+
+                footerRight = new Label
+                {
+                    Text = DateTime.Now.ToString("MM/dd/yyyy hh:mm:ss tt"),
+                    Font = new Font("Segoe UI", 13, FontStyle.Bold),
+                    BackColor = Color.Transparent,
+                    BorderStyle = BorderStyle.None,
+                    ForeColor = Color.Black,
+                    AutoSize = true,
+                    Location = new Point(this.ClientSize.Width - 225, this.ClientSize.Height - 40)
+                };
+                this.Controls.Add(footerRight);
+                UpdateClockPosition();
+
+                clockTimer = new Timer();
+                clockTimer.Interval = 1000;
+                clockTimer.Tick += ClockTimer_Tick;
+                clockTimer.Start();
+            }
+
+            private void Dgv_CellClick(object sender, DataGridViewCellEventArgs e)
+            {
+                if (e.ColumnIndex == 4 && e.RowIndex >= 0)
+                {
+                    dgv.Rows.RemoveAt(e.RowIndex);
+                    UpdateTotal();
+                }
+            }
+
+            private void UpdateTotal()
+            {
+                decimal total = 0;
+                foreach (DataGridViewRow row in dgv.Rows)
+                {
+                    if (decimal.TryParse(row.Cells["FinalAmount"].Value?.ToString(), out decimal amount))
+                    {
+                        total += amount;
+                    }
+                }
+                lblTotal.Text = $"Total: {total:N2}";
+                lblTotal.Visible = dgv.Rows.Count > 0;
+            }
+
+            private void BtnNext_Click(object sender, EventArgs e)
+            {
+            if (dgv.Rows.Count == 0)
+            {
+                //MessageBox.Show("Please add at least one transaction before proceeding.", "No Transactions", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                CustomMessageBox.Show("No Transactions", "Please add at least one transaction before proceeding.", CustomMessageBox.MessageBoxButtonsCustom.OK, CustomMessageBox.MessageBoxIconCustom.Warning);
+                return;
+            }
+            if (Form1.Instance != null && Form1.Instance.serialPort != null)
+            {
+                try
+                {
+                    if (!Form1.Instance.serialPort.IsOpen)
+                    {
+                        Form1.Instance.serialPort.Open(); 
+                    }
+
+                    Form1.Instance.serialPort.WriteLine("power_on");
+                }
+                catch (Exception ex)
+                {
+                    //MessageBox.Show("Error sending command to Arduino: " + ex.Message);
+                    CustomMessageBox.Show("Error", "Error sending command to Controller:" + ex.Message, CustomMessageBox.MessageBoxButtonsCustom.OK, CustomMessageBox.MessageBoxIconCustom.Error);
+
+                }
+            }
+
+            SaveTransactions();
+            string total = lblTotal.Text.Replace("Total: ", "").Replace("₱", "").Replace(",", "").Trim();
+
+            List<TransactionItem> transactions = new List<TransactionItem>();
+            foreach (DataGridViewRow row in dgv.Rows)
+            {
+                transactions.Add(new TransactionItem
+                {
+                    TransactionType = row.Cells["TransactionType"].Value.ToString(),
+                    Quantity = int.Parse(row.Cells["Quantity"].Value.ToString()),
+                    Amount = decimal.Parse(row.Cells["Amount"].Value.ToString())
+                });
+            }
+
+            Form5 form5 = new Form5(total, this, transactions);
+                form5.Show();
+                this.Hide();
+            }
+
+            protected override void OnPaint(PaintEventArgs e)
+            {
+                LinearGradientBrush gradientBrush = new LinearGradientBrush(
+                    this.ClientRectangle,
+                    Color.White,
+                    Color.LightGray,
+                    LinearGradientMode.Vertical
+                );
+                e.Graphics.FillRectangle(gradientBrush, this.ClientRectangle);
+                base.OnPaint(e);
+            }
+        public List<TransactionItem> GetTransactions()
+        {
+            List<TransactionItem> transactions = new List<TransactionItem>();
+            foreach (DataGridViewRow row in dgv.Rows)
+            {
+                if (row.IsNewRow) continue;
+
+                transactions.Add(new TransactionItem
+                {
+                    TransactionType = row.Cells["TransactionType"].Value?.ToString(),
+                    Quantity = int.TryParse(row.Cells["Quantity"].Value?.ToString(), out int qty) ? qty : 0,
+                    Amount = decimal.TryParse(row.Cells["Amount"].Value?.ToString(), out decimal amt) ? amt : 0
+                });
+            }
+            return transactions;
+        }
+
+        private void SaveTransactions()
+            {
+                foreach (DataGridViewRow row in dgv.Rows)
+                {
+                    string type = row.Cells["TransactionType"].Value?.ToString();
+                    string amount = row.Cells["Amount"].Value?.ToString();
+                    string quantity = row.Cells["Quantity"].Value?.ToString();
+                    string final = row.Cells["FinalAmount"].Value?.ToString();
+                }
+            }
+        //KEYBOARD CODE TO CLOSE THE FORM ESC 
+        protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+        {
+            if (keyData == Keys.Escape)
+            {
+                //this.Close();
+                Application.Exit();
+                return true;
+            }
+
+            return base.ProcessCmdKey(ref msg, keyData);
+        }
+    }
+}

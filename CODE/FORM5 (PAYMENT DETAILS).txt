@@ -1,0 +1,598 @@
+using System;
+using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.Windows.Forms;
+using System.IO.Ports;
+using System.Collections.Generic;
+using System.Linq;
+using static billGUI.Form3;
+using System.Threading.Tasks;
+
+namespace billGUI
+{
+    public partial class Form5 : Form
+    {
+        private PictureBox btnBack, btnNext;
+        private Label lblForPayment, lblAmountInserted, lblDenomination, footerLeft, footerRight, lblMessage, 
+            lblForPaymentValue, lblBack, lblNext, lblAmountInsertedValue;
+        private Timer clockTimer;
+        private string forPaymentAmount;
+        private SerialPort serialPort;
+        private decimal totalInserted = 0, forPaymentDecimal;
+        private Form3 previousForm3;
+
+        //FOR DENOMINATION PANEL
+        private List<string> insertedDenominations = new List<string>();
+        private bool isPanelColorOdd = false;
+        private Panel pnlDenomination;
+
+        //FORM3 TRANSACTION DETAILS
+        private List<TransactionItem> transactionList;
+
+        //TRANSACTION CODE FOR RECEIPT
+        private string transCode = "";
+
+        //BLINKING FOR NEXT BUTTON
+        private Timer blinkTimer;
+        private bool isBlinking = false;
+
+        public Form5(string formattedPayment, Form3 form3, List<TransactionItem> transactions)
+        {
+            InitializeComponent();
+            this.forPaymentAmount = formattedPayment;
+            this.forPaymentDecimal = decimal.Parse(forPaymentAmount);
+            this.DoubleBuffered = true;
+            this.WindowState = FormWindowState.Maximized;
+            this.FormBorderStyle = FormBorderStyle.FixedSingle;
+            this.previousForm3 = form3;
+            Form1.Instance.SetForm5Instance(this);
+            this.transactionList = transactions;
+
+            this.Load += Form5_Load;
+            this.Resize += (s, e) => UpdateClockPosition();
+
+        }
+
+        private void Form5_Load(object sender, EventArgs e)
+        {
+            this.Controls.Clear();
+            this.BackColor = Color.White;
+
+            // BACK BUTTON
+            btnBack = new PictureBox
+            {
+                Image = Properties.Resources.left_arrow,
+                SizeMode = PictureBoxSizeMode.StretchImage,
+                Size = new Size(100, 100),
+                Location = new Point(30, 20),
+                Cursor = Cursors.Hand
+            };
+            btnBack.Click += (s, ev) =>
+            {
+                //Form3 form3 = new Form3("9"); 
+                //form3.Show();
+                previousForm3.Show();  
+                this.Close();
+            };
+            this.Controls.Add(btnBack);
+
+            lblBack = new Label
+            {
+                Text = "Back",
+                Font = new Font("Segoe UI", 16, FontStyle.Bold),
+                Location = new Point(btnBack.Right + 10, btnBack.Top + 30),
+                AutoSize = true
+            };
+            this.Controls.Add(lblBack);
+
+            // NEXT BUTTON
+            btnNext = new PictureBox
+            {
+                Image = Properties.Resources.right_arrow_2_,
+                SizeMode = PictureBoxSizeMode.StretchImage,
+                Size = new Size(100, 100),
+                Location = new Point(this.ClientSize.Width - 130, 20),
+                Anchor = AnchorStyles.Top | AnchorStyles.Right,
+                Cursor = Cursors.Hand
+            };
+            btnNext.Click += async (s, ev) =>
+            {
+                if (totalInserted <= 0)
+                {
+                    //MessageBox.Show("Please insert a bill before proceeding.", "No Payment", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    CustomMessageBox.Show("No Payment", "Please insert a bill before proceeding.", CustomMessageBox.MessageBoxButtonsCustom.OK, CustomMessageBox.MessageBoxIconCustom.Warning);
+
+                    return; 
+                }
+
+                DialogResult result = CustomMessageBox.Show(
+                    "Confirm Transaction",
+                    "Are you sure you want to proceed?\nThe receipt will be printed and the transaction will be completed.",
+                    CustomMessageBox.MessageBoxButtonsCustom.YesNo,
+                    CustomMessageBox.MessageBoxIconCustom.Info); 
+
+
+                if (result != DialogResult.Yes)
+                {
+                    return;
+                }
+
+                string studentId = previousForm3.StudentId;
+                try
+                {
+                    if (Form1.Instance != null && Form1.Instance.serialPort != null && Form1.Instance.serialPort.IsOpen)
+                    {
+                        // 1. Send all transaction details
+                        foreach (var item in transactionList)
+                        {
+                            decimal total = item.Quantity * item.Amount;
+                            string line = $"TRN|{item.TransactionType} x{item.Quantity} = {total:N2}";
+                            Form1.Instance.serialPort.WriteLine(line);
+                            System.Threading.Thread.Sleep(200); 
+                        }
+
+                        // 2. Send total amount
+                        string totalFormatted = forPaymentDecimal.ToString("N2");
+                        Form1.Instance.serialPort.WriteLine($"TOTAL|{totalFormatted}");
+                        System.Threading.Thread.Sleep(200);
+
+                        // 3. Send current time
+                        string now = DateTime.Now.ToString("MM/dd/yyyy hh:mm:ss tt");
+                        Form1.Instance.serialPort.WriteLine($"TIME|{now}");
+                        System.Threading.Thread.Sleep(200);
+                        
+                        // 3.5 Send transaction number based on denominations
+                        Form1.Instance.serialPort.WriteLine($"TRANSNO|{transCode}");
+                        System.Threading.Thread.Sleep(200);
+
+                        if (!string.IsNullOrEmpty(studentId))
+                        {
+                            Form1.Instance.serialPort.WriteLine($"STUDENT|{studentId}");
+                            System.Threading.Thread.Sleep(200);
+                        }
+
+                        LoadingForm loadingForm = new LoadingForm();
+                        loadingForm.Show();
+                        loadingForm.BringToFront();
+                        loadingForm.Refresh();
+
+                        // 4. Trigger actual print
+                        Form1.Instance.serialPort.WriteLine("print");
+
+                        string cleanedline = "";
+                        DateTime startWait = DateTime.Now;
+
+                        while ((DateTime.Now - startWait).TotalSeconds < 15)
+                        {
+                            try
+                            {
+                                if (Form1.Instance.serialPort.BytesToRead > 0)
+                                {
+                                    cleanedline = Form1.Instance.serialPort.ReadLine().Trim();
+                                    if (cleanedline == "DONE PRINTING")
+                                        break;
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"Serial read error: {ex.Message}");
+                            }
+                            await Task.Delay(100); 
+                        }
+
+                        // 5. Clear for next use
+                        Form1.Instance.serialPort.WriteLine("reset");
+
+                        // 6. Relay off
+                        Form1.Instance.serialPort.WriteLine("power_off");
+
+                        // Proceed to Form6
+                        Form6 form6 = new Form6();
+                        form6.Show();
+                        form6.StartReturnTimer();
+                        Application.DoEvents();
+                        loadingForm.Close();
+                        this.Close();
+                    }
+
+                    try
+                    {
+                        DatabaseHelper.UpdateBalance(studentId, totalInserted);
+
+                        // Extract and save denominations
+                        //foreach (var line in insertedDenominations)
+                        //{
+                        //    // Example format: "BILL     100.00"
+                        //    string trimmed = line.Trim();
+                        //    string[] parts = trimmed.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+
+                        //    if (parts.Length >= 2)
+                        //    {
+                        //        string denominationType = parts[0].ToUpper();  // "BILL" or "COIN"
+                        //        string denominationValueStr = parts[1];
+
+                        //        if (decimal.TryParse(denominationValueStr, out decimal denomDecimal))
+                        //        {
+                        //            int denominationValue = (int)Math.Round(denomDecimal);
+
+                        //            DatabaseHelper.InsertDenomination(
+                        //                studentId,
+                        //                denominationType,
+                        //                denominationValue,
+                        //                transCode
+                        //            );
+                        //        }
+                        //    }
+                        //}
+                    }
+                    catch (Exception ex)
+                    {
+                        CustomMessageBox.Show("Database Error", "Failed to save denomination data.\n" + ex.Message, CustomMessageBox.MessageBoxButtonsCustom.OK, CustomMessageBox.MessageBoxIconCustom.Warning);
+
+                    }
+
+                    // Reset GUI after print
+                    totalInserted = 0;
+                    insertedDenominations.Clear();
+                    lblAmountInsertedValue.Text = "₱ 0.00";
+                    lblDenomination.Text = "Denomination:\n";
+
+                    // Proceed to Form6
+                    //Form6 form6 = new Form6();
+                    //form6.Show();
+                    //form6.StartReturnTimer();
+                    //this.Close();
+                }
+                catch (Exception ex)
+                {
+                    CustomMessageBox.Show("Error", "Failed to send print command:\n" + ex.Message, CustomMessageBox.MessageBoxButtonsCustom.OK, CustomMessageBox.MessageBoxIconCustom.Warning);
+
+                }
+            };
+
+            this.Controls.Add(btnNext);
+
+            lblNext = new Label
+            {
+                Text = "Next",
+                Font = new Font("Segoe UI", 16, FontStyle.Bold),
+                Location = new Point(btnNext.Left - 80, btnNext.Top + 30),
+                TextAlign = ContentAlignment.MiddleCenter,
+                AutoSize = true
+            };
+            this.Controls.Add(lblNext);
+
+            // FOR PAYMENT & TOTAL AMOUNT INSERTED
+            string formattedPayment = $"₱ {decimal.Parse(forPaymentAmount).ToString("N2")}";
+            Panel pnlForPayment = CreateAmountBox("For Payment:", formattedPayment, 200, 200, out lblForPaymentValue);
+            Panel pnlAmountInserted = CreateAmountBox("Total Amount Inserted:", "₱ 0.00", 200, 310, out lblAmountInsertedValue);
+
+            this.Controls.Add(pnlForPayment);
+            this.Controls.Add(pnlAmountInserted);
+
+            // DENOMINATION BOX
+            Panel pnlDenomination = new Panel
+            {
+                Location = new Point(930, 200),
+                Size = new Size(870, 600),
+                AutoScroll = true,
+                BorderStyle = BorderStyle.FixedSingle
+            };
+            this.Controls.Add(pnlDenomination);
+
+            lblDenomination = new Label
+            {
+                Text = "Denomination:\n",
+                Font = new Font("Segoe UI", 20, FontStyle.Bold),
+                AutoSize = true,  
+                Location = new Point(0, 0)
+            };
+            pnlDenomination.Controls.Add(lblDenomination);
+
+            // RED MESSAGE BELOW
+            lblMessage = new Label
+            {
+                Text = "Please insert your bills now...",
+                Font = new Font("Segoe UI", 18, FontStyle.Bold),
+                ForeColor = Color.Red,
+                AutoSize = true,
+                BackColor = Color.Transparent
+            };
+            this.Controls.Add(lblMessage);
+
+            lblMessage.Location = new Point(
+                (this.ClientSize.Width - lblMessage.Width) / 2,
+                this.ClientSize.Height - 120
+            );
+
+            // Insert Bills and Coins label
+            Label lblInsert = new Label
+            {
+                Text = "Insert Bills and Coins",
+                Font = new Font("Segoe UI", 35, FontStyle.Bold),
+                AutoSize = true,
+                ForeColor = Color.Red,
+                BackColor = Color.Transparent,
+                TextAlign = ContentAlignment.MiddleCenter
+            };
+            this.Controls.Add(lblInsert);
+
+            int leftBoundary = lblBack.Right; 
+            int rightBoundary = lblNext.Left; 
+            int centerX = leftBoundary + (rightBoundary - leftBoundary) / 2;
+            int centerY = btnBack.Top + (btnBack.Height / 2) - (lblInsert.Height / 2);
+            lblInsert.Location = new Point(centerX - (lblInsert.Width / 2), centerY);
+
+            // FOOTER LEFT
+            footerLeft = new Label
+            {
+                Text = "Powered by: AMA - SDI (2025)",
+                Font = new Font("Segoe UI", 13, FontStyle.Bold),
+                ForeColor = Color.Black,
+                BackColor = Color.Transparent,
+                BorderStyle = BorderStyle.None,
+                AutoSize = true,
+                Location = new Point(10, this.ClientSize.Height - 40)
+            };
+            this.Controls.Add(footerLeft);
+
+            // FOOTER RIGHT (CLOCK)
+            footerRight = new Label
+            {
+                Text = DateTime.Now.ToString("MM/dd/yyyy hh:mm:ss tt"),
+                Font = new Font("Segoe UI", 13, FontStyle.Bold),
+                BackColor = Color.Transparent,
+                BorderStyle = BorderStyle.None,
+                ForeColor = Color.Black,
+                AutoSize = true,
+                Location = new Point(this.ClientSize.Width - 225, this.ClientSize.Height - 40)
+            };
+            this.Controls.Add(footerRight);
+            UpdateClockPosition();
+
+            clockTimer = new Timer();
+            clockTimer.Interval = 1000;
+            clockTimer.Tick += ClockTimer_Tick;
+            clockTimer.Start();
+
+            //blinkTimer = new Timer();
+            //blinkTimer.Interval = 300; // Blink every 500ms
+            //blinkTimer.Tick += (s, ev) =>
+            //{
+            //    btnNext.Visible = !btnNext.Visible;
+            //    lblNext.Visible = !lblNext.Visible;
+            //};
+        }
+
+        private Panel CreateAmountBox(string labelText, string amountText, int x, int y, out Label valueLabel)
+        {
+            Panel panel = new Panel
+            {
+                Size = new Size(700, 100),
+                Location = new Point(x, y),
+                BorderStyle = BorderStyle.FixedSingle,
+                BackColor = Color.White
+            };
+
+            Label title = new Label
+            {
+                Text = labelText,
+                Font = new Font("Segoe UI", 16, FontStyle.Bold),
+                AutoSize = true,
+                Location = new Point(20, 10)
+            };
+
+            valueLabel = new Label
+            {
+                Text = amountText,
+                Font = new Font("Segoe UI", 28, FontStyle.Bold),
+                AutoSize = true
+            };
+
+            panel.Controls.Add(title);
+            panel.Controls.Add(valueLabel);
+
+            valueLabel.Location = new Point(panel.Width - valueLabel.Width - 20, panel.Height - valueLabel.Height - 10);
+            valueLabel.Location = new Point(panel.Width - valueLabel.Width - 20, panel.Height - valueLabel.Height - 10);
+
+            return panel;
+        }
+
+        private void ClockTimer_Tick(object sender, EventArgs e)
+        {
+            footerRight.Text = DateTime.Now.ToString("MM/dd/yyyy hh:mm:ss tt");
+            footerRight.AutoSize = true;
+            footerRight.Refresh();
+            int newX = this.ClientSize.Width - footerRight.Width - 10;
+            if (newX < 0) newX = 0;
+            footerRight.Location = new Point(newX, this.ClientSize.Height - 40);
+            footerRight.BringToFront();
+        }
+        private void UpdateClockPosition()
+        {
+            if (footerRight != null)
+            {
+                int newX = this.ClientSize.Width - footerRight.Width - 10;
+                if (newX < 0) newX = 0;
+                footerRight.Location = new Point(newX, this.ClientSize.Height - 40);
+                footerRight.BringToFront();
+            }
+        }
+
+        //BACKGROUND ONLY
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            LinearGradientBrush gradientBrush = new LinearGradientBrush(
+                this.ClientRectangle,
+                Color.White,
+                Color.LightGray,
+                LinearGradientMode.Vertical
+            );
+            e.Graphics.FillRectangle(gradientBrush, this.ClientRectangle);
+            base.OnPaint(e);
+        }
+
+        //CONNECTED TO FORM1 SERIAL PORT (HARDWARE AND FORM1)
+        public void UpdateInsertedAmount(string amount, string type)
+        {
+            if (lblAmountInsertedValue.InvokeRequired)
+            {
+                lblAmountInsertedValue.Invoke(new Action(() =>
+                {
+                    HandleAmountUpdate(amount, type);
+                }));
+            }
+            else
+            {
+                HandleAmountUpdate(amount, type);
+            }
+        }
+
+        private void HandleAmountUpdate(string amount, string type)
+        {
+            if (!decimal.TryParse(amount.Replace("₱", "").Trim(), out decimal currentInserted))
+                return;
+
+            decimal added = currentInserted - totalInserted;
+            totalInserted = currentInserted;
+
+            lblAmountInsertedValue.Text = $"₱ {totalInserted:N2}";
+            RepositionAmountLabel();
+            HideButtonsIfAmountInserted(lblAmountInsertedValue.Text);
+
+            if (added > 0)
+            {
+                int intAdded = (int)added;
+                AddInsertedDenomination(type, intAdded);
+
+                string studentId = previousForm3.StudentId;
+                DatabaseHelper.InsertDenomination(
+                    studentId,
+                    type.ToUpper(),   // "BILL" or "COIN"
+                    intAdded,
+                    transCode
+                );
+            }
+        }
+    
+        //LOCATION OF THE INSERTED BILL
+        private void RepositionAmountLabel()
+        {
+            if (lblAmountInsertedValue != null && lblAmountInsertedValue.Parent != null)
+            {
+                lblAmountInsertedValue.AutoSize = true;
+
+                int panelWidth = lblAmountInsertedValue.Parent.Width;
+                int labelWidth = lblAmountInsertedValue.Width;
+                int labelHeight = lblAmountInsertedValue.Height;
+                int panelHeight = lblAmountInsertedValue.Parent.Height;
+
+                lblAmountInsertedValue.Location = new Point(panelWidth - labelWidth - 20, panelHeight - labelHeight - 10);
+            }
+        }
+        private void AddInsertedDenomination(string type, int value)
+        {
+            insertedDenominations.Add($"{new string(' ', 7)}{type,-10}{new string(' ', 77)}{value,10:N2}");
+
+            if (type == "COIN")
+            {
+                switch (value)
+                {
+                    case 1: transCode += "1"; break;
+                    case 5: transCode += "2"; break;
+                    case 10: transCode += "3"; break;
+                    case 20: transCode += "4"; break;
+                }
+            }
+            else if (type == "BILL")
+            {
+                switch (value)
+                {
+                    case 20: transCode += "A"; break;
+                    case 50: transCode += "B"; break;
+                    case 100: transCode += "C"; break;
+                    case 200: transCode += "D"; break;
+                    case 500: transCode += "E"; break;
+                    case 1000: transCode += "F"; break;
+                }
+            }
+
+            string formatted = "Denomination:\n";
+            foreach (var item in insertedDenominations)
+                formatted += $"{item}\n";
+
+            lblDenomination.Text = formatted;
+        }
+        //private void StartBlinking()
+        //{
+        //    if (!isBlinking)
+        //    {
+        //        isBlinking = true;
+        //        blinkTimer.Start();
+        //    }
+        //}
+
+        //private void StopBlinking()
+        //{
+        //    if (isBlinking)
+        //    {
+        //        isBlinking = false;
+        //        blinkTimer.Stop();
+        //        btnNext.Visible = true;
+        //        lblNext.Visible = true;
+        //    }
+        //}
+
+        private void HideButtonsIfAmountInserted(string amount)
+        {
+            if (decimal.TryParse(amount.Replace("₱", "").Trim(), out decimal insertedAmount))
+            {
+                if (insertedAmount == 0)
+                {
+                    // No bills inserted: show both Back and Next
+                    btnBack.Visible = true;
+                    lblBack.Visible = true;
+
+                    btnNext.Visible = true;
+                    lblNext.Visible = true;
+
+                    //StopBlinking();
+                }
+                else if (insertedAmount > 0 && insertedAmount < forPaymentDecimal)
+                {
+                    // Partial amount: hide both buttons
+                    btnBack.Visible = false;
+                    lblBack.Visible = false;
+
+                    btnNext.Visible = false;
+                    lblNext.Visible = false;
+
+                    //StopBlinking();
+                }
+                else if (insertedAmount >= forPaymentDecimal)
+                {
+                    // Overpayment: treat same as exact payment
+                    btnBack.Visible = false;
+                    lblBack.Visible = false;
+
+                    btnNext.Visible = true;
+                    lblNext.Visible = true;
+
+                    //StartBlinking();
+                }
+            }
+        }
+        //KEYBOARD CODE TO CLOSE THE FORM ESC 
+        protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+        {
+            if (keyData == Keys.Escape)
+            {
+                //this.Close();
+                Application.Exit();
+                return true;
+            }
+
+            return base.ProcessCmdKey(ref msg, keyData);
+        }
+    }
+}
